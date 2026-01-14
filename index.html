@@ -2,157 +2,189 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fist Pump Strobe</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Fist Pump Debugger</title>
     <style>
         body {
             margin: 0;
             padding: 0;
             background-color: #000;
             color: #fff;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
+            font-family: monospace;
             height: 100vh;
             overflow: hidden;
-            transition: background-color 0.1s ease-out;
+            transition: background-color 0.05s ease-out;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end; /* Moves everything to bottom */
         }
 
-        .controls {
-            z-index: 10;
-            text-align: center;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 20px;
-            border-radius: 20px;
-            border: 1px solid #444;
+        #ui-layer {
+            background: rgba(20, 20, 20, 0.9);
+            border-top: 1px solid #444;
+            padding: 15px;
+            padding-bottom: env(safe-area-inset-bottom); /* iOS Notch support */
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        #debug-console {
+            font-size: 10px;
+            color: #0f0;
+            height: 80px;
+            overflow-y: auto;
+            background: #111;
+            padding: 5px;
+            border-radius: 5px;
+            border: 1px solid #333;
         }
 
         button {
-            padding: 15px 30px;
-            font-size: 1.2rem;
+            flex: 1;
+            padding: 12px;
             font-weight: bold;
             border: none;
-            border-radius: 50px;
+            border-radius: 8px;
             background: #00ff88;
             color: #000;
-            cursor: pointer;
-            margin-bottom: 20px;
         }
 
-        input[type=range] {
-            width: 200px;
-            margin-top: 10px;
-        }
-
-        .status {
-            font-size: 0.8rem;
-            margin-top: 10px;
-            color: #aaa;
-        }
+        input[type=range] { flex: 2; }
+        
+        .stat-label { color: #888; font-size: 10px; text-transform: uppercase; }
+        .val { color: #fff; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <div class="controls">
-        <h1>Fist Pump Pro</h1>
-        <button id="startBtn">START PARTY</button>
-        <div>
-            <label>Sensitivity Threshold</label><br>
-            <input type="range" id="threshold" min="10" max="50" value="25">
+    <div id="ui-layer">
+        <div id="debug-console">Initializing... Waiting for user interaction.</div>
+        
+        <div class="row">
+            <div id="accel-data">
+                <span class="stat-label">Force:</span> <span id="mag-val" class="val">0.0</span>
+            </div>
+            <div id="torch-status">
+                <span class="stat-label">Torch:</span> <span id="torch-val" class="val">OFF</span>
+            </div>
         </div>
-        <div class="status" id="status">Permissions required...</div>
+
+        <div class="row">
+            <span class="stat-label">Sensitivity</span>
+            <input type="range" id="threshold" min="5" max="60" value="20">
+            <span id="thresh-display" class="val">20</span>
+        </div>
+
+        <div class="row">
+            <button id="startBtn">ACTIVATE PARTY MODE</button>
+        </div>
     </div>
 
     <script>
         const startBtn = document.getElementById('startBtn');
-        const statusDiv = document.getElementById('status');
+        const debug = document.getElementById('debug-console');
+        const magVal = document.getElementById('mag-val');
+        const torchVal = document.getElementById('torch-val');
         const thresholdInput = document.getElementById('threshold');
-        
+        const threshDisplay = document.getElementById('thresh-display');
+
         let track = null;
         let isActive = false;
         let lastTrigger = 0;
 
+        function log(msg) {
+            const time = new Date().toLocaleTimeString().split(' ')[0];
+            debug.innerHTML = `[${time}] ${msg}<br>` + debug.innerHTML;
+        }
+
+        thresholdInput.oninput = () => threshDisplay.innerText = thresholdInput.value;
+
         async function init() {
+            log("Requesting permissions...");
             try {
-                // 1. Request Camera for Flashlight
+                // 1. Camera Access
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: 'environment' } 
                 });
                 track = stream.getVideoTracks()[0];
-
-                // 2. Request Motion Permissions (Required for iOS)
-                if (typeof DeviceMotionEvent.requestPermission === 'function') {
-                    const permission = await DeviceMotionEvent.requestPermission();
-                    if (permission !== 'granted') {
-                        throw new Error('Motion permission denied');
-                    }
+                
+                // Inspect Capabilities
+                const caps = track.getCapabilities();
+                if (caps.torch) {
+                    log("Flashlight hardware detected!");
+                    torchVal.innerText = "READY";
+                    torchVal.style.color = "#00ff88";
+                } else {
+                    log("Flashlight NOT detected by browser.");
+                    torchVal.innerText = "UNSUPPORTED";
+                    torchVal.style.color = "#ff4444";
                 }
 
-                startLogic();
+                // 2. Motion Access (iOS)
+                if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                    const permission = await DeviceMotionEvent.requestPermission();
+                    log("Motion Permission: " + permission);
+                }
+
+                window.addEventListener('devicemotion', handleMotion);
+                isActive = true;
+                startBtn.innerText = "SHUTDOWN";
+                startBtn.style.background = "#ff4444";
+                log("System Active. Pump it!");
+
             } catch (err) {
-                statusDiv.innerText = "Error: " + err.message;
-                console.error(err);
+                log("Error: " + err.message);
             }
         }
 
-        function startLogic() {
-            isActive = true;
-            startBtn.innerText = "STOP";
-            startBtn.style.background = "#ff4444";
-            statusDiv.innerText = "Active: Pump your phone!";
-
-            window.addEventListener('devicemotion', handleMotion);
-        }
-
         function handleMotion(event) {
-            if (!isActive) return;
-
             const acc = event.accelerationIncludingGravity;
             if (!acc) return;
 
-            // Calculate total force (Magnitude of X, Y, Z)
-            const magnitude = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
-            const threshold = parseInt(thresholdInput.value);
+            const magnitude = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
+            magVal.innerText = magnitude.toFixed(1);
 
-            // Debounce to prevent double-triggering (100ms)
+            const limit = parseInt(thresholdInput.value);
             const now = Date.now();
-            if (magnitude > threshold && now - lastTrigger > 100) {
+
+            if (magnitude > limit && now - lastTrigger > 150) {
                 triggerPulse();
                 lastTrigger = now;
             }
         }
 
         async function triggerPulse() {
-            // Flash Screen
-            const hue = Math.floor(Math.random() * 360);
-            document.body.style.backgroundColor = `hsl(${hue}, 100%, 50%)`;
+            // Screen Flash
+            document.body.style.backgroundColor = `hsl(${Math.random() * 360}, 100%, 50%)`;
             
-            // Flash Torch (Only works on supported Android devices)
+            // Torch Flash
             if (track && track.getCapabilities().torch) {
                 try {
                     await track.applyConstraints({ advanced: [{ torch: true }] });
                     setTimeout(() => {
                         track.applyConstraints({ advanced: [{ torch: false }] });
-                    }, 50);
+                    }, 60);
                 } catch (e) {
-                    console.log("Torch error:", e);
+                    log("Torch Apply Error: " + e.message);
                 }
             }
 
-            // Reset background
             setTimeout(() => {
                 document.body.style.backgroundColor = '#000';
-            }, 80);
+            }, 100);
         }
 
         startBtn.addEventListener('click', () => {
-            if (!isActive) {
-                init();
-            } else {
-                location.reload(); // Simplest way to kill stream and listeners
-            }
+            if (!isActive) init();
+            else location.reload();
         });
     </script>
 </body>
