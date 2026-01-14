@@ -3,187 +3,129 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Fist Pump Debugger</title>
+    <title>Fist Pump Fix</title>
     <style>
         body {
-            margin: 0;
-            padding: 0;
-            background-color: #000;
-            color: #fff;
-            font-family: monospace;
-            height: 100vh;
-            overflow: hidden;
-            transition: background-color 0.05s ease-out;
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-end; /* Moves everything to bottom */
+            margin: 0; padding: 0;
+            background-color: #111; color: #fff;
+            font-family: sans-serif; height: 100vh;
+            display: flex; flex-direction: column; justify-content: flex-end;
+            transition: background-color 0.1s;
         }
-
-        #ui-layer {
-            background: rgba(20, 20, 20, 0.9);
-            border-top: 1px solid #444;
-            padding: 15px;
-            padding-bottom: env(safe-area-inset-bottom); /* iOS Notch support */
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
+        #controls {
+            background: rgba(0,0,0,0.9); padding: 20px;
+            border-top: 2px solid #333; z-index: 100;
         }
-
-        .row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-        }
-
-        #debug-console {
-            font-size: 10px;
-            color: #0f0;
-            height: 80px;
-            overflow-y: auto;
-            background: #111;
-            padding: 5px;
-            border-radius: 5px;
-            border: 1px solid #333;
-        }
-
         button {
-            flex: 1;
-            padding: 12px;
-            font-weight: bold;
-            border: none;
-            border-radius: 8px;
-            background: #00ff88;
-            color: #000;
+            width: 100%; padding: 20px; font-size: 1.2rem;
+            background: #00ff88; border: none; border-radius: 10px;
+            font-weight: bold; margin-bottom: 10px;
         }
-
-        input[type=range] { flex: 2; }
-        
-        .stat-label { color: #888; font-size: 10px; text-transform: uppercase; }
-        .val { color: #fff; font-weight: bold; }
+        .debug-box {
+            background: #000; color: #0f0; font-family: monospace;
+            font-size: 11px; height: 100px; overflow-y: scroll;
+            padding: 10px; border: 1px solid #444; margin-top: 10px;
+        }
+        .stats { display: flex; justify-content: space-between; font-size: 12px; color: #aaa; margin-bottom: 5px;}
     </style>
 </head>
 <body>
 
-    <div id="ui-layer">
-        <div id="debug-console">Initializing... Waiting for user interaction.</div>
-        
-        <div class="row">
-            <div id="accel-data">
-                <span class="stat-label">Force:</span> <span id="mag-val" class="val">0.0</span>
-            </div>
-            <div id="torch-status">
-                <span class="stat-label">Torch:</span> <span id="torch-val" class="val">OFF</span>
-            </div>
+    <div id="controls">
+        <div class="stats">
+            <span>Force: <b id="force-ui">0</b></span>
+            <span>Torch: <b id="torch-ui">WAITING</b></span>
         </div>
-
-        <div class="row">
-            <span class="stat-label">Sensitivity</span>
-            <input type="range" id="threshold" min="5" max="60" value="20">
-            <span id="thresh-display" class="val">20</span>
-        </div>
-
-        <div class="row">
-            <button id="startBtn">ACTIVATE PARTY MODE</button>
-        </div>
+        <button id="mainBtn">ACTIVATE SENSORS</button>
+        <div id="log" class="debug-box">System ready. Tap button to start.</div>
     </div>
 
     <script>
-        const startBtn = document.getElementById('startBtn');
-        const debug = document.getElementById('debug-console');
-        const magVal = document.getElementById('mag-val');
-        const torchVal = document.getElementById('torch-val');
-        const thresholdInput = document.getElementById('threshold');
-        const threshDisplay = document.getElementById('thresh-display');
+        const mainBtn = document.getElementById('mainBtn');
+        const logBox = document.getElementById('log');
+        const forceUi = document.getElementById('force-ui');
+        const torchUi = document.getElementById('torch-ui');
+        
+        let videoTrack = null;
+        let isRunning = false;
 
-        let track = null;
-        let isActive = false;
-        let lastTrigger = 0;
-
-        function log(msg) {
-            const time = new Date().toLocaleTimeString().split(' ')[0];
-            debug.innerHTML = `[${time}] ${msg}<br>` + debug.innerHTML;
+        function print(msg) {
+            const div = document.createElement('div');
+            div.textContent = `> ${msg}`;
+            logBox.prepend(div);
         }
 
-        thresholdInput.oninput = () => threshDisplay.innerText = thresholdInput.value;
-
-        async function init() {
-            log("Requesting permissions...");
+        async function startApp() {
+            print("Step 1: Requesting Camera...");
             try {
-                // 1. Camera Access
+                // Request camera (mandatory for flashlight)
                 const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'environment' } 
+                    video: { facingMode: "environment" } 
                 });
-                track = stream.getVideoTracks()[0];
+                videoTrack = stream.getVideoTracks()[0];
                 
-                // Inspect Capabilities
-                const caps = track.getCapabilities();
+                const caps = videoTrack.getCapabilities();
                 if (caps.torch) {
-                    log("Flashlight hardware detected!");
-                    torchVal.innerText = "READY";
-                    torchVal.style.color = "#00ff88";
+                    torchUi.innerText = "READY";
+                    torchUi.style.color = "#00ff88";
+                    print("Flashlight support confirmed.");
                 } else {
-                    log("Flashlight NOT detected by browser.");
-                    torchVal.innerText = "UNSUPPORTED";
-                    torchVal.style.color = "#ff4444";
+                    torchUi.innerText = "NO TORCH";
+                    print("Camera found, but no flashlight API.");
                 }
 
-                // 2. Motion Access (iOS)
+                print("Step 2: Requesting Motion...");
+                // Request Motion (iOS 13+ requirement)
                 if (typeof DeviceMotionEvent.requestPermission === 'function') {
-                    const permission = await DeviceMotionEvent.requestPermission();
-                    log("Motion Permission: " + permission);
+                    const res = await DeviceMotionEvent.requestPermission();
+                    print("Motion Permission: " + res);
+                } else {
+                    print("Standard Motion API detected.");
                 }
 
-                window.addEventListener('devicemotion', handleMotion);
-                isActive = true;
-                startBtn.innerText = "SHUTDOWN";
-                startBtn.style.background = "#ff4444";
-                log("System Active. Pump it!");
+                window.addEventListener('devicemotion', (e) => {
+                    let acc = e.accelerationIncludingGravity || e.acceleration;
+                    if (!acc) return;
+
+                    let total = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
+                    forceUi.innerText = Math.floor(total);
+
+                    // Threshold trigger (Adjust 25 if too sensitive)
+                    if (total > 25) {
+                        pulse();
+                    }
+                });
+
+                isRunning = true;
+                mainBtn.innerText = "RESET APP";
+                mainBtn.style.background = "#555";
+                print("SYSTEM ACTIVE. PUMP PHONE.");
 
             } catch (err) {
-                log("Error: " + err.message);
+                print("FATAL ERROR: " + err.name);
+                console.error(err);
             }
         }
 
-        function handleMotion(event) {
-            const acc = event.accelerationIncludingGravity;
-            if (!acc) return;
-
-            const magnitude = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
-            magVal.innerText = magnitude.toFixed(1);
-
-            const limit = parseInt(thresholdInput.value);
-            const now = Date.now();
-
-            if (magnitude > limit && now - lastTrigger > 150) {
-                triggerPulse();
-                lastTrigger = now;
-            }
-        }
-
-        async function triggerPulse() {
-            // Screen Flash
-            document.body.style.backgroundColor = `hsl(${Math.random() * 360}, 100%, 50%)`;
+        async function pulse() {
+            // Flash screen random color
+            document.body.style.backgroundColor = `hsl(${Math.random()*360}, 100%, 50%)`;
             
-            // Torch Flash
-            if (track && track.getCapabilities().torch) {
+            // Try flashlight
+            if (videoTrack && videoTrack.getCapabilities().torch) {
                 try {
-                    await track.applyConstraints({ advanced: [{ torch: true }] });
-                    setTimeout(() => {
-                        track.applyConstraints({ advanced: [{ torch: false }] });
-                    }, 60);
-                } catch (e) {
-                    log("Torch Apply Error: " + e.message);
-                }
+                    await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
+                    setTimeout(() => videoTrack.applyConstraints({ advanced: [{ torch: false }] }), 50);
+                } catch (e) {}
             }
 
             setTimeout(() => {
-                document.body.style.backgroundColor = '#000';
+                document.body.style.backgroundColor = '#111';
             }, 100);
         }
 
-        startBtn.addEventListener('click', () => {
-            if (!isActive) init();
+        mainBtn.addEventListener('click', () => {
+            if (!isRunning) startApp();
             else location.reload();
         });
     </script>
