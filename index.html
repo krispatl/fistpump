@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fist Pump Strobe</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            transition: background-color 0.1s ease-out;
+        }
+
+        .controls {
+            z-index: 10;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 20px;
+            border: 1px solid #444;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 50px;
+            background: #00ff88;
+            color: #000;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+
+        input[type=range] {
+            width: 200px;
+            margin-top: 10px;
+        }
+
+        .status {
+            font-size: 0.8rem;
+            margin-top: 10px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="controls">
+        <h1>Fist Pump Pro</h1>
+        <button id="startBtn">START PARTY</button>
+        <div>
+            <label>Sensitivity Threshold</label><br>
+            <input type="range" id="threshold" min="10" max="50" value="25">
+        </div>
+        <div class="status" id="status">Permissions required...</div>
+    </div>
+
+    <script>
+        const startBtn = document.getElementById('startBtn');
+        const statusDiv = document.getElementById('status');
+        const thresholdInput = document.getElementById('threshold');
+        
+        let track = null;
+        let isActive = false;
+        let lastTrigger = 0;
+
+        async function init() {
+            try {
+                // 1. Request Camera for Flashlight
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } 
+                });
+                track = stream.getVideoTracks()[0];
+
+                // 2. Request Motion Permissions (Required for iOS)
+                if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                    const permission = await DeviceMotionEvent.requestPermission();
+                    if (permission !== 'granted') {
+                        throw new Error('Motion permission denied');
+                    }
+                }
+
+                startLogic();
+            } catch (err) {
+                statusDiv.innerText = "Error: " + err.message;
+                console.error(err);
+            }
+        }
+
+        function startLogic() {
+            isActive = true;
+            startBtn.innerText = "STOP";
+            startBtn.style.background = "#ff4444";
+            statusDiv.innerText = "Active: Pump your phone!";
+
+            window.addEventListener('devicemotion', handleMotion);
+        }
+
+        function handleMotion(event) {
+            if (!isActive) return;
+
+            const acc = event.accelerationIncludingGravity;
+            if (!acc) return;
+
+            // Calculate total force (Magnitude of X, Y, Z)
+            const magnitude = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
+            const threshold = parseInt(thresholdInput.value);
+
+            // Debounce to prevent double-triggering (100ms)
+            const now = Date.now();
+            if (magnitude > threshold && now - lastTrigger > 100) {
+                triggerPulse();
+                lastTrigger = now;
+            }
+        }
+
+        async function triggerPulse() {
+            // Flash Screen
+            const hue = Math.floor(Math.random() * 360);
+            document.body.style.backgroundColor = `hsl(${hue}, 100%, 50%)`;
+            
+            // Flash Torch (Only works on supported Android devices)
+            if (track && track.getCapabilities().torch) {
+                try {
+                    await track.applyConstraints({ advanced: [{ torch: true }] });
+                    setTimeout(() => {
+                        track.applyConstraints({ advanced: [{ torch: false }] });
+                    }, 50);
+                } catch (e) {
+                    console.log("Torch error:", e);
+                }
+            }
+
+            // Reset background
+            setTimeout(() => {
+                document.body.style.backgroundColor = '#000';
+            }, 80);
+        }
+
+        startBtn.addEventListener('click', () => {
+            if (!isActive) {
+                init();
+            } else {
+                location.reload(); // Simplest way to kill stream and listeners
+            }
+        });
+    </script>
+</body>
+</html>
